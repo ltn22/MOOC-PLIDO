@@ -219,7 +219,7 @@ class BME280:
             (((adc >> 4) - self.dig_T1) * ((adc >> 4) - self.dig_T1)) >> 12) *
             self.dig_T3) >> 14
         self.t_fine = var1 + var2
-        return (self.t_fine * 5 + 128) >> 8
+        return float(((self.t_fine * 5 + 128) >> 8)/100)
 
     def read_pressure(self):
         """Gets the compensated pressure in Pascals."""
@@ -237,7 +237,7 @@ class BME280:
         p = (((p << 31) - var2) * 3125) // var1
         var1 = (self.dig_P9 * (p >> 13) * (p >> 13)) >> 25
         var2 = (self.dig_P8 * p) >> 19
-        return ((p + var1 + var2) >> 8) + (self.dig_P7 << 4)
+        return float ( ( ((p + var1 + var2) >> 8) + (self.dig_P7 << 4) ) / 25600)
 
     def read_humidity(self):
         adc = self.read_raw_humidity()
@@ -250,7 +250,7 @@ class BME280:
         h = h - (((((h >> 15) * (h >> 15)) >> 7) * self.dig_H1) >> 4)
         h = 0 if h < 0 else h
         h = 419430400 if h > 419430400 else h
-        return h >> 12
+        return float((h >> 12)/1000)
 
     @property
     def temperature(self):
@@ -299,5 +299,5 @@ if __name__ == "__main__":
         cr = bme.read_raw_humidity()
         c = bme.read_humidity()
 
-        print ("temp", ar,  a,"hum", cr,  c, "pres", br, "pres", b, "delta", ob - br, )
+        print ("temp", ar,  a, "° - hum", cr,  c, "% - pres", br, "pres", b, "hPa [delta", ob - br, "]" )
         ob =br

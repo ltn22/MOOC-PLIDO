@@ -19,15 +19,21 @@ SCHC compressor, Copyright (c) <2017><IMT Atlantique and Philippe Clavier>
 #
 
 import struct
+from json import loads as json_loads
+from binascii import hexlify
 
 CBOR_POSITIVE = 0x00
 CBOR_NEGATIVE = 0x20
-CBOR_STRING = 0x40
-CBOR_BITMAP = 0x60
+CBOR_BITMAP = 0x40
+CBOR_STRING = 0x60
 CBOR_ARRAY= 0x80
 CBOR_PAIR = 0xA0
 CBOR_TAG = 0xC0
 CBOR_FLOAT = 0xE0
+
+json_elm = ""
+cbor_src = None
+cbor_ptr = 0
 
 class CBOR:
 
@@ -47,7 +53,7 @@ class CBOR:
                 return
             else:
                 # find the size in bit (first bit to the left != 0)
-                for i in range (31,  0,  -1):
+                for i in range (63,  0,  -1):
                     if ((0x01 << i) & value):
                         break
 
@@ -82,8 +88,11 @@ class CBOR:
             self.buffer = struct.pack('!B', (CBOR_STRING | l))
             self.buffer += value
 
-
             return  #end of string
+
+        if type(value) is float:
+            self.buffer = struct.pack('!Bf', (CBOR_FLOAT | 26), value) # 4 bytes length
+            return
 
         if type(value) is list:
                 l = len(value)
@@ -93,9 +102,37 @@ class CBOR:
                     print('Too much elements')
                     return
                 for elm in value:
-                   self.buffer += elm.buffer
+                    if type (elm) is CBOR:
+                        self.buffer += elm.buffer
+                    else:
+                        c = CBOR(elm)
+                        self.buffer += c.buffer
 
                 return # end of list
+
+        if type(value) == dict:
+                l = len(value)
+                if (l < 23):
+                    self.buffer = struct.pack('!B', (CBOR_PAIR | l))
+                else:
+                    print('Too much elements')
+                    return
+                for k, v in value.items():
+                    if type(k) == CBOR:
+                        self.buffer += k.buffer
+                    else:
+                        c = CBOR (k)
+                        self.buffer += c.buffer
+
+                    if type (v) == CBOR:
+                        self.buffer += v.buffer
+                    else:
+                        c = CBOR(v)
+                        self.buffer += c.buffer
+
+                return
+
+
 
     def addList(self, elm):
 
@@ -146,12 +183,119 @@ class CBOR:
     def length (self):
         return len(self.buffer)
 
-    def dump(self):
-        for h in self.buffer:
-                print ("%3.2x"% h,  end='')
-        print('')
+    def value(self):
+        return self.buffer
+
+    def __str__(self):
+        return "CBOR object: Len {} Value {}".format(len(self.buffer), hexlify(self.buffer))
+
+def dumps(value):
+    return CBOR(value)
+
+def ctoj():
+    global json_elm
+    global cbor_ptr
+    global cbor_src
+
+    if (cbor_ptr < len(cbor_src)):
+        c_type  = cbor_src[cbor_ptr] & 0b11100000
+        c_len   = cbor_src[cbor_ptr] & 0b00011111
+
+        cbor_ptr += 1
+
+        if c_len > 23:
+            real_size = 0x01 << (c_len - 24)
+            if c_len < 28:
+                c_len = 0;
+                for i in range (0, real_size):
+                    c_len <<= 8;
+                    c_len += cbor_src[cbor_ptr]
+                    cbor_ptr += 1
+            else:
+                raise ValueError("size incorrect")
+
+        if c_type == CBOR_POSITIVE:
+            json_elm += str(c_len)
+
+        elif c_type ==  CBOR_NEGATIVE:
+            json_elm += "-"
+            json_elm += str(c_len+1)
+
+        elif c_type == CBOR_BITMAP:
+            json_elm += 'b"'
+            for i in range (0, c_len):
+                json_elm += str(cbor_src[cbor_ptr])
+                cbor_ptr == 1
+            json_elm == '"'
+
+        elif c_type == CBOR_STRING:
+            json_elm += '"'
+            for i in range (0, c_len):
+                json_elm += chr(cbor_src[cbor_ptr])
+                cbor_ptr += 1
+            json_elm += '"'
+
+        elif c_type == CBOR_ARRAY:
+            json_elm += "["
+            for i in range(0, c_len):
+                ctoj()
+                if i+1 < c_len: json_elm += ", "
+            json_elm += "]"
+
+        elif c_type == CBOR_PAIR:
+            json_elm += "{"
+            for i in range(0, c_len):
+                ctoj()
+                json_elm += ":"
+                ctoj()
+                if i+1 < c_len: json_elm += ", "
+            json_elm += "}"
+
+        elif c_type == CBOR_TAG:
+            print ("skipping tag")
+        elif c_type == CBOR_FLOAT:
+            buf = struct.pack(">I", c_len)
+            f = struct.unpack (">f", buf)
+            json_elm += str (f[0])
+            pass
+
+    else:
+        raise ValueError ("Lenght is incorrect")
+
+
+
+def loads(cbor_elm):
+    if type(cbor_elm) in (CBOR, bytes):
+        global json_elm
+        global cbor_ptr
+        global cbor_src
+
+        json_elm = ""
+        cbor_ptr = 0
+        if type(cbor_elm) == CBOR:
+            cbor_src = cbor_elm.value()
+        elif type(cbor_elm) == bytes:
+            cbor_src = cbor_elm
+
+        ctoj ()
+
+        return json_loads(json_elm)
+    else:
+        raise ValueError("Not a CBOR object")
 
 
 #
 #  END OF CLASS CBOR
 #
+
+if __name__ == "__main__":
+    import binascii
+
+    c = CBOR({"adb":1, "hello":"world", "rest":10000, "float":3.141592, "encore":[100, 1000, 10000, 100000, 10000000, 100000000, 1000000000, 10000000000]})
+    print (binascii.hexlify(c.value()))
+    j = loads(c)
+
+    print (j)
+
+    c2 = CBOR(10000000000)
+    print (binascii.hexlify(c2.value()))
