@@ -13,7 +13,7 @@ app_key = binascii.unhexlify('11 22 33 44 55 66 77 88 11 22 33 44 55 66 77 88'.r
 
 
 pycom.heartbeat(False)
-pycom.rgbled(0xFFFFFF)
+pycom.rgbled(0x111111)
 
 # join a network using OTAA (Over the Air Activation)
 lora.join(activation=LoRa.OTAA, auth=(app_eui, app_key),  timeout=0)
