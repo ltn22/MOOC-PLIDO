@@ -51,40 +51,42 @@ while True:
     print (c)
     nbMsg += 1
 
-    post = coap.Message()
-    post.new_header(type=coap.CON, code=coap.POST)
-    post.add_option_path("THP") #temperature humidity pression
-    post.add_option_content(coap.CONTENT_CBOR)
+    post = coap.CoAP()
+    post.new_header(Type=coap.NON, Code=coap.POST, Token = 0x1234)
+    post.add_option_path("foo") #temperature humidity pression
     post.end_option()
     post.add_value(c)
 
-    print (binascii.hexlify(post.to_coap()))
 
     s.setblocking(True)
     s.settimeout(10)
 
+    data = None
+
+    print ("Sending...")
+    print (post)
+    post.dump()
     try:
         s.send(post.to_coap())
     except:
         print ('timeout in sending')
 
+    print ()
     try:
         data = s.recv(64)
-        print(data)
-        led_json = cbor.loads(data)
-        print (led_json)
-        led_color = 0x000000
-        for i in range(0, 3):
-            led_color <<= 8
-            led_color += led_json[i]
-
-        print (hex(led_color))
-        pycom.rgbled(led_color)
+        pycom.rgbled(0x001100)
 
     except:
         print ('timeout in receive')
         pycom.rgbled(0x000000)
 
+    if data is not None:
+        rep_coap = coap.CoAP(data)
+        print ("Received...")
+        print(rep_coap)
+        rep_coap.dump()
+    else:
+        print ("No DW data")
 
     s.setblocking(False)
 

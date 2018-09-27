@@ -14,7 +14,7 @@ SCHC compressor, Copyright (c) <2017><IMT Atlantique and Philippe Clavier>
 
 # from network import LoRa
 import socket
-import pycom
+#import pycom
 import struct
 from CBOR import CBOR
 import time
@@ -35,39 +35,47 @@ ACK = 2
 RST = 3
 """Reset message type"""
 
-# types = {0: 'CON',
-#          1: 'NON',
-#          2: 'ACK',
-#          3: 'RST'}
+types = {0: 'CON',
+         1: 'NON',
+         2: 'ACK',
+         3: 'RST'}
 
 EMPTY = 0
 GET = 1
 POST = 2
 PUT = 3
 DELETE = 4
-# CREATED = 65
-# DELETED = 66
-# VALID = 67
-# CHANGED = 68
-# CONTENT = 69
-# CONTINUE = 95
-# BAD_REQUEST = 128
-# UNAUTHORIZED = 129
-# BAD_OPTION = 130
-# FORBIDDEN = 131
-# NOT_FOUND = 132
-# METHOD_NOT_ALLOWED = 133
-# NOT_ACCEPTABLE = 134
-# REQUEST_ENTITY_INCOMPLETE = 136
-# PRECONDITION_FAILED = 140
-# REQUEST_ENTITY_TOO_LARGE = 141
-# UNSUPPORTED_CONTENT_FORMAT = 143
-# INTERNAL_SERVER_ERROR = 160
-# NOT_IMPLEMENTED = 161
-# BAD_GATEWAY = 162
-# SERVICE_UNAVAILABLE = 163
-# GATEWAY_TIMEOUT = 164
-# PROXYING_NOT_SUPPORTED = 165
+
+codes = {
+0: "EMPTY",
+1: "GET",
+2: "POST",
+3: "PUT",
+4: "DELETE",
+65: "CREATED",
+66: "DELETED",
+67: "VALID",
+68: "CHANGED",
+69: "CONTENT",
+95: "CONTINUE",
+128: "BAD_REQUEST",
+129: "UNAUTHORIZED",
+130: "BAD_OPTION",
+131: "FORBIDDEN",
+132: "NOT_FOUND",
+133: "METHOD_NOT_ALLOWED",
+134: "NOT_ACCEPTABLE",
+136: "REQUEST_ENTITY_INCOMPLETE",
+140: "PRECONDITION_FAILED",
+141: "REQUEST_ENTITY_TOO_LARGE",
+143: "UNSUPPORTED_CONTENT_FORMAT",
+160: "INTERNAL_SERVER_ERROR",
+161: "NOT_IMPLEMENTED",
+162: "BAD_GATEWAY",
+163: "SERVICE_UNAVAILABLE",
+164: "GATEWAY_TIMEOUT",
+165: "PROXYING_NOT_SUPPORTED"
+}
 
 # requests = {1: 'GET',
 #             2: 'POST',
@@ -96,25 +104,26 @@ DELETE = 4
 # PROXY_SCHEME = 39
 # SIZE1 = 60
 #
-# options = {1: 'If-Match',
-#            3: 'Uri-Host',
-#            4: 'ETag',
-#            5: 'If-None-Match',
-#            6: 'Observe',
-#            7: 'Uri-Port',
-#            8: 'Location-Path',
-#            11: 'Uri-Path',
-#            12: 'Content-Format',
-#            14: 'Max-Age',
-#            15: 'Uri-Query',
-#            17: 'Accept',
-#            20: 'Location-Query',
-#            23: 'Block2',
-#            27: 'Block1',
-#            28: 'Size2',
-#            35: 'Proxy-Uri',
-#            39: 'Proxy-Scheme',
-#            60: 'Size1'}
+options = {1: ['If-Match','hex'],
+           3: ['Uri-Host','str'],
+           4: ['ETag','hex'],
+           5: ['If-None-Match','hex'],
+           6: ['Observe','hex'],
+           7: ['Uri-Port','hex'],
+           8: ['Location-Path','str'],
+           11: ['Uri-Path','str'],
+           12: ['Content-Format','hex'],
+           14: ['Max-Age','hex'],
+           15: ['Uri-Query','str'],
+           17: ['Accept','hex'],
+           20: ['Location-Query','str'],
+           23: ['Block2','hex'],
+           27: ['Block1','hex'],
+           28: ['Size2','hex'],
+           35: ['Proxy-Uri','str'],
+           39: ['Proxy-Scheme','str'],
+           60: ['Size1','hex'],
+           232: ['No Response', 'hex']}
 #
 # options_rev = {v:k for k, v in options.items()}
 
@@ -282,7 +291,7 @@ class CoAPSM:
         if ( lastTime > 0 ): time.sleep ( finishIn - time.time() )
 
 
-class Message:
+class CoAP:
 
     """
     class CoAP for client and server
@@ -296,36 +305,71 @@ class Message:
         for bytes in self.buffer:
             print ( hex( bytes ), end = '-' )
 
-    def new_header ( self, type = CON, code = GET, token = 0x12, midSize = 16 ):
+    def new_header ( self, Type = CON, Code = GET, Token = None):
 
         global mid
 
         self.buffer = bytearray()
 
+        # print ("token = ", token)
+        # print (type(token))
+        if Token == None:
+            tkl = 0
+        elif type(Token) is int:
+            idx = 31
+            while idx > 0:
+                if Token & (0x01 << idx) != 0: break
+                idx -= 1
+
+            tkl = idx//8 +1
+
+            tkv = []
+            for i in range (0, tkl):
+                tkv.append (Token & 0xFF)
+                Token >>= 8
+
+        else:
+            raise ValueError ("Unknwon format {} for token".format(type(Token)))
+
         # First 32 bit word
-        byte = ( ( 01 ) << 6 ) | ( type << 4 ) | 0x01  # need to compute token length
+        byte = ( 0x01 << 6 ) | ( Type << 4 ) | tkl  # need to compute token length
 # /!\ Token is one byte long, should be changed to allow different sizes
-        self.buffer = struct.pack ( '!BBHB', byte, code, mid, token )
+        self.buffer = struct.pack ( '!BBH', byte, Code, mid )
 
-# In some cases the Message ID size must be limited to a smaller number of bits
-# To allow rule selection, especially with MSB the size must be controlled
+# add token
+        for i in range(0, tkl):
+            self.buffer += struct.pack ("!B", tkv[i])
 
-        mid = ( mid + 1 ) % ( 1 << midSize )
-        if ( mid == 0 ): mid = 1  # mid = 0 may be ack with a random number
-        print( "MID = ", mid )
+        mid = mid + 1
 
     def __add_option_TL ( self, T, L ):
         delta = T - self.option
+
+        if (delta < 0):
+            raise ValueError ("Option order not respected")
+
         self.option = T
 
-        if ( delta < 13 ) and ( L < 13 ) is True:
-            self.buffer += struct.pack( 'B', ( delta << 4 ) | L )
-        else:
-            print( 'Not Done' )
+        if delta >= 13 and delta < 269:
+            delta_value = delta-13
+            delta=13
+        elif delta > 269:
+            raise ValueError ('Delta {} more than 1 byte Not implemented'.format(delta))
+
+        if L > 13:
+            raise ValueError( 'Length after TLV byte Not Done' )
+
+        self.buffer += struct.pack( 'B', ( delta << 4 ) | L)
+
+        if delta == 13:
+            print ("add delta value", delta_value)
+            self.buffer += struct.pack( 'B', delta_value)
+
+        print ("add header", binascii.hexlify(self.buffer))
 
     def add_option_path( self, path = '' ):
         self.__add_option_TL( 11, len( path ) )
-        self.buffer += path
+        self.buffer += bytes(path, 'utf-8')
 
     def add_option_query( self, query = '' ):
         self.__add_option_TL( 15, len( query ) )
@@ -335,6 +379,17 @@ class Message:
     def add_option_content (self, value):
             self.__add_option_TL(12, 1)
             self.buffer += struct.pack('B', value)
+
+    def add_option_noResponse (self, bitmap=None):
+        if bitmap == None:
+            self.__add_option_TL(258, 0)
+        else:
+            if type (bitmap) is int and bitmap < 256:
+                self.__add_option_TL(258, 1)
+                self.buffer += struct.pack("!B", bitmap)
+            else:
+                raise ValueError("Illegal No Response bitmap")
+
 
     def end_option( self ):
         self.buffer += struct.pack( 'B', 0xFF )
@@ -354,3 +409,60 @@ class Message:
 
     def mid( self ):
         return self.buffer[2] << 8 | self.buffer[3]
+
+    def __str__(self):
+        return "CoAP message: Len {} Value {}".format(len(self.buffer), binascii.hexlify(self.buffer))
+
+    def dump(self):
+        if len (self.buffer) < 4:
+            raise ValueError("CoAP length too small")
+
+        (b1, Code, MID) = struct.unpack ("!BBH", self.buffer)
+
+        Type = (b1 & 0x30) >> 4
+        TLK = b1 & 0x0F
+
+        if len (self.buffer) < 4+TLK:
+            raise ValueError("Token too large")
+
+        print ("{} 0x{:04x} [{}]".format(types[Type], MID, binascii.hexlify(self.buffer[4:4+TLK])))
+        print ("{}.{:02d} ({})".format(Code >> 5, Code & 31, codes[Code]))
+
+        idx = 4+TLK
+        deltaT = 0
+        while idx < len(self.buffer) and self.buffer[idx] != 0xff:
+            d = self.buffer[idx]>>4
+            l = self.buffer[idx] & 0x0F
+
+            if d > 13:
+                print ("deltaT not done")
+
+            if l >= 13:
+                print ("length not done")
+
+            idx += 1
+
+            if d == 13:
+                d = self.buffer[idx] - 13
+                idx += 1
+
+            deltaT += d
+
+            if deltaT in options:
+                print (options[deltaT][0], end=":")
+                option_type = options[deltaT][1]
+            else:
+                print (hex(deltaT), end=":")
+                option_type = "hex"
+
+
+            for i in range (0, l):
+                if option_type == "hex":
+                    print (hex(self.buffer[idx]), end=" ")
+                elif option_type == "str":
+                    print (chr(self.buffer[idx]), end="")
+                else:
+                    print (".")
+
+                idx += 1
+            print()
