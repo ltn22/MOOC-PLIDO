@@ -22,7 +22,7 @@ while not lora.has_joined():
 
 s = socket.socket(socket.AF_LORA, socket.SOCK_RAW)
 #s.bind(5)
-s.setsockopt(socket.SOL_LORA, socket.SO_DR, 0)
+s.setsockopt(socket.SOL_LORA, socket.SO_DR, 5)
 s.setsockopt(socket.SOL_LORA,  socket.SO_CONFIRMED,  False)
 
 
