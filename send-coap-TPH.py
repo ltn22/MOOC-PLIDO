@@ -9,10 +9,10 @@ import pycom
 
 from machine import I2C
 
-# i2c = I2C(0, I2C.MASTER, baudrate=400000)
-# print (i2c.scan())
-#
-# bme = BME280.BME280(i2c=i2c)
+i2c = I2C(0, I2C.MASTER, baudrate=400000)
+print (i2c.scan())
+
+bme = BME280.BME280(i2c=i2c)
 
 lora = LoRa(mode=LoRa.LORAWAN)
 
@@ -40,20 +40,18 @@ s.setsockopt(socket.SOL_LORA,  socket.SO_CONFIRMED,  False)
 nbMsg = 1
 
 while True:
-    # temp = bme.read_temperature()
-    # humi = bme.read_humidity()
-    # pres = bme.read_pressure()
-    temp = 2
-    humi = 3
-    pres = 4
+    temp = bme.read_temperature()
+    pres = bme.read_pressure()
+    humi = bme.read_humidity()
 
-    c = cbor.dumps([nbMsg, int(temp*100), int(pres*100), int(humi*100)])
+
+    c = cbor.dumps([nbMsg, int(temp*100), int(humi*100), int(pres*100)])
     print (c)
     nbMsg += 1
 
     post = coap.CoAP()
     post.new_header(Type=coap.NON, Code=coap.POST, Token = 0x1234)
-    post.add_option_path("foo") #temperature humidity pression
+    post.add_option_URI_path("TPH") #temperature pression Humidity
     post.end_option()
     post.add_value(c)
 

@@ -20,6 +20,7 @@ from CBOR import CBOR
 import time
 import binascii
 import sys
+import pycom
 
 
 
@@ -127,7 +128,13 @@ options = {1: ['If-Match','hex'],
 #
 # options_rev = {v:k for k, v in options.items()}
 
+CONTENT_TEXT =  0
+CONTENT_JSON = 50
 CONTENT_CBOR = 60
+
+NO_2 = 0b00000010
+NO_4 = 0b00001000
+NO_5 = 0b00010000
 
 mid = 1
 
@@ -142,39 +149,22 @@ class MsgInWait:
         self.attempts = 0
         self.socket = s
 
-        print ( binascii.hexlify( self.comprimed ) )
+class CoAPClient:
 
-def increase_lora_delivary_chances(element):
-    if (element.attempts == 2): element.DR = 4
-    elif (element.attempts == 4): element.DR = 2
-
-    element.socket.setsockopt(socket.SOL_LORA, socket.SO_DR, element.DR)
-
-increase_delivary_chances_functions = {
-  "LORAWAN": increase_lora_delivary_chances,
-  "SIGFOX": lambda el: None,
-}
-
-class CoAPSM:
-
-    def __init__ (self, p, c, d,  idcf):
+    def __init__ (self, sock):
+        self.socket = sock
         self.toBeAcked = []
-        self.parser = p
-        self.comp = c
-        self.dec = d
-        self.increase_delivary_chances = idcf
 
-    def send(self,  sock,  msg,  timeout=0):
+
+    def send(self,  msg,  timeout=0):
         print ("TIME= ", time.time(),  end =" ")
         print ("ADD ",  msg.mid,  end=' ')
         print ('IN ',  timeout)
 
-        self.toBeAcked.append( MsgInWait( sock, msg, timeout ) )
+        self.toBeAcked.append( MsgInWait( self.socket, msg, timeout ) )
 
     def acked ( self, a ):
         for m in self.toBeAcked:
-            print ( m, '==>', m.msg.mid() )
-            print ( a.mid() )
             if ( m.msg.mid() == a.mid() ):
                 self.toBeAcked.remove( m )
 
@@ -204,15 +194,11 @@ class CoAPSM:
                     # No ack remove from the list
                     self.acked( element.msg )
 
-                if element.attempts > 0:
-                    self.increase_delivary_chances(element)
-
                 element.socket.setblocking(True)
                 element.socket.settimeout(10)
 
                 print( "sending: ", end = "" )
-                print( binascii.hexlify( element.comprimed ), end = ' ' )
-                print( len( element.comprimed ), " bytes ", end = '|' )
+                element.msg.dump()
                 print( ' DR = ', element.DR, 'attempt =', element.attempts )
 
                 if ( element.attempts == 2 ): element.DR = 4
@@ -227,8 +213,10 @@ class CoAPSM:
 
                 pycom.rgbled( 0xFF0000 )  # LED sending
 #
+                element.socket.send(element.msg.to_coap())
+
                 try:
-                    element.socket.send( bytes( element.comprimed ) )
+                    element.socket.send( bytes( element.msg ) )
                 except:
                     print ( "TIMEOUT in sending" )
 
@@ -250,44 +238,22 @@ class CoAPSM:
 
 
                 if ( dataRcv ):
-                    print( "receive DATA", data )
 
-                    respRuleId = data[0:1]
-                    respCompCoap = data [1:]
-
-                    print ( "RuleId =", respRuleId, "content ", respCompCoap )
-
-                    decRule = self.dec.RuleMngt.FindRuleFromID( respRuleId[0] )
-
-                    if ( decRule == None ):
-                        print( "No Rule" )
-                    else:
-                        resPkt = bytearray( b'' )
-                        CoAPResp = bytearray( b'' )
-
-                        respPkt, respPktLength = self.dec.apply( respCompCoap, decRule, "dw" )
-                        print ( "decompressing ", binascii.hexlify( respPkt), '/', respPktLength )
-
-                        IPv6Header = respPkt [0:40]
-                        UDPHeader = respPkt [40:48]
-                        CoAPresp = respPkt[48:]
-
-                        ack = Message( CoAPresp )
-
-                        print ( "CoAP response = ", binascii.hexlify(CoAPresp ))
+                    ack = CoAP(data)
+                    print(ack)
+                    ack.dump()
 
                     if ( ack.type() == ACK ):
                         self.acked( ack )
 
             else:  # Queue empty
-                print( 'Empty list' )
+                pass
 
             time.sleep( 20 )
 
         # end while
 
         lastTime = finishIn - time.time()
-        print( "no more time for retransmission:", lastTime )
         if ( lastTime > 0 ): time.sleep ( finishIn - time.time() )
 
 
@@ -305,9 +271,10 @@ class CoAP:
         for bytes in self.buffer:
             print ( hex( bytes ), end = '-' )
 
-    def new_header ( self, Type = CON, Code = GET, Token = None):
+    def new_header ( self, Type = CON, Code = GET, MID = None, Token = None):
 
         global mid
+
 
         self.buffer = bytearray()
 
@@ -334,7 +301,11 @@ class CoAP:
         # First 32 bit word
         byte = ( 0x01 << 6 ) | ( Type << 4 ) | tkl  # need to compute token length
 # /!\ Token is one byte long, should be changed to allow different sizes
-        self.buffer = struct.pack ( '!BBH', byte, Code, mid )
+        if MID == None:
+            self.buffer = struct.pack ( '!BBH', byte, Code, mid )
+        else:
+            self.buffer = struct.pack ( '!BBH', byte, Code, MID )
+
 
 # add token
         for i in range(0, tkl):
@@ -362,16 +333,15 @@ class CoAP:
         self.buffer += struct.pack( 'B', ( delta << 4 ) | L)
 
         if delta == 13:
-            print ("add delta value", delta_value)
             self.buffer += struct.pack( 'B', delta_value)
 
-        print ("add header", binascii.hexlify(self.buffer))
-
-    def add_option_path( self, path = '' ):
+    def add_option_URI_path( self, path = '' ):
+        if path.find("/") != -1:
+            raise ValueError("/ in URI-path")
         self.__add_option_TL( 11, len( path ) )
         self.buffer += bytes(path, 'utf-8')
 
-    def add_option_query( self, query = '' ):
+    def add_option_URI_query( self, query = '' ):
         self.__add_option_TL( 15, len( query ) )
         self.buffer += query
 
@@ -414,6 +384,10 @@ class CoAP:
         return "CoAP message: Len {} Value {}".format(len(self.buffer), binascii.hexlify(self.buffer))
 
     def dump(self):
+        if len(self.buffer) == 0:
+            print("empty CoAP message")
+            return
+
         if len (self.buffer) < 4:
             raise ValueError("CoAP length too small")
 
