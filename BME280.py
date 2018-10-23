@@ -60,12 +60,12 @@ class Device:
     def writeRaw8(self, value):
         """Write an 8-bit value on the bus (without register)."""
         value = value & 0xFF
-        self._i2c.writeto(self._address, value.to_bytes(1))
+        self._i2c.writeto(self._address, value.to_bytes(1, 'little'))
 
     def write8(self, register, value):
         """Write an 8-bit value to the specified register."""
         value = value & 0xFF
-        self._i2c.writeto_mem(self._address, register, value.to_bytes(1))
+        self._i2c.writeto_mem(self._address, register, value.to_bytes(1, 'little'))
 
     def write16(self, register, value):
         """Write a 16-bit value to the specified register."""
@@ -74,12 +74,12 @@ class Device:
 
     def readRaw8(self):
         """Read an 8-bit value on the bus (without register)."""
-        return int.from_bytes(self._i2c.readfrom(self._address, 1)) & 0xFF
+        return int.from_bytes(self._i2c.readfrom(self._address, 1), 'little') & 0xFF
 
     def readU8(self, register):
         """Read an unsigned byte from the specified register."""
         return int.from_bytes(
-            self._i2c.readfrom_mem(self._address, register, 1)) & 0xFF
+            self._i2c.readfrom_mem(self._address, register, 1), 'little') & 0xFF
 
     def readS8(self, register):
         """Read a signed byte from the specified register."""
@@ -92,7 +92,7 @@ class Device:
         """Read an unsigned 16-bit value from the specified register, with the
         specified endianness (default little endian, or least significant byte
         first)."""
-        result = int.from_bytes(self._i2c.readfrom_mem(self._address, register, 2)) & 0xFFFF
+        result = int.from_bytes(self._i2c.readfrom_mem(self._address, register, 2), 'little') & 0xFFFF
         if not little_endian:
             result = ((result << 8) & 0xFF00) + (result >> 8)
         return result
