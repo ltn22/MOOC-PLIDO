@@ -31,6 +31,8 @@ while True:
     s.setblocking(True)
     s.settimeout(10)
 
+# for testing new code, remove try/except
+
     try:
         s.send('Hello LoRa')
     except:
