@@ -51,7 +51,7 @@ while True:
 
     post = coap.CoAP()
     post.new_header(Type=coap.NON, Code=coap.POST, Token = 0x1234)
-    post.add_option_URI_path("TPH") #temperature pression Humidity
+    post.add_option_URI_path("foo") #temperature pression Humidity
     post.end_option()
     post.add_value(c)
 
