@@ -14,7 +14,7 @@ print (i2c.scan())
 
 bme = BME280.BME280(i2c=i2c)
 
-lora = LoRa(mode=LoRa.LORAWAN)
+lora = LoRa(mode=LoRa.LORAWAN, region=LoRa.EU868)
 
 print ("devEUI {}".format(binascii.hexlify(lora.mac())))
 
@@ -45,7 +45,7 @@ while True:
     humi = bme.read_humidity()
 
 
-    c = cbor.dumps([nbMsg, int(temp*100), int(humi*100), int(pres*100)])
+    c = cbor.dumps([int(temp*100), int(humi*100), int(pres*100)])
     print (c)
     nbMsg += 1
 
